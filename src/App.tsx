@@ -15,7 +15,7 @@ const ASTROGEMS: Record<GemKey, { will: number; points: number }> = {
     L: { will: 6, points: 5 },
 };
 
-const CORE_WILL = { Relic: 15, Ancient: 17 } as const;
+const CORE_WILL = { Legendary: 12, Relic: 15, Ancient: 17,  None: 0 } as const;
 const MAX_SLOTS = 4;
 const GEM_WEIGHT: Record<GemKey, number> = { A: 10, B: 9, C: 8, D: 7, E: 6, F: 5, G: 4, H: 3, K: 2, L: 1 };
 const TOP_N = 300;
@@ -27,7 +27,6 @@ type Combo = {
     counts: Partial<Record<GemKey, number>>;
     will: number;
     points: number;
-    prefScore: number;
 };
 type Candidate = {
     combos: Combo[];
@@ -35,6 +34,8 @@ type Candidate = {
     ptsRaw: number[];
     will: number[];
     key: number[];
+    power: number;
+    sidenodes: number;
 };
 type OptimizationResult = { best: Candidate | null };
 
@@ -55,9 +56,7 @@ function generateCoreCombos(inv: Inventory, maxWill: number) {
             points += ASTROGEMS[t].points;
         }
         if (will <= maxWill) {
-            let pref = 0;
-            for (const t of combo) pref += inv[t][(counts[t] || 1) - 1];
-            results.push({ combo: combo.slice(), counts: { ...counts }, will, points, prefScore: pref });
+            results.push({ combo: combo.slice(), counts: { ...counts }, will, points });
         }
         //}
         if (combo.length === MAX_SLOTS) return;
@@ -101,6 +100,8 @@ function generateCoreCombos(inv: Inventory, maxWill: number) {
 function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[]): OptimizationResult {
     const perCoreMaxWill = coreConfigs.map((c) => CORE_WILL[c.rarity]);
     const perCoreTarget = coreConfigs.map((c) => c.target || 20);
+    inv = Object.fromEntries(Object.entries(inv).map(([k, v]) => [k, v.slice().sort((a, b) => b - a)])) as Inventory;
+
     const combosPerCore = perCoreMaxWill.map((w) => generateCoreCombos(inv, w));
     //if(combosPerCore.some(list=>list.length===0)) return { best: null }
     const trimmed = combosPerCore.map((list) => list.slice(0, TOP_N));
@@ -150,29 +151,39 @@ function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[]): Optimiza
                 }
                 if (!fitsInventory(combined, inv)) continue;
 
+                let sidenodes = 0
+                for (const t of Object.keys(combined)) {
+                    const key = t as GemKey;
+                    const used = combined[key] as number;
+                    for (let i = 0; i < used; i++) {
+                        sidenodes += inv[key][i];
+                    }
+                }
+
                 function roundPts(pts: number) {
-                    if (pts >= 20) return 56;
-                    if (pts >= 18) return 54;
-                    if (pts >= 18) return 52;
-                    if (pts >= 17) return 50;
+                    if (pts >= 20) return 51;
+                    if (pts >= 19) return 49;
+                    if (pts >= 18) return 47;
+                    if (pts >= 17) return 45;
                     if (pts >= 14) return 30;
                     if (pts >= 10) return 15;
                     return pts;
-                }
+                }// 52+15+9 = 
 
                 const pts0 = roundPts(Math.min(c0.points, caps[0]));
                 const pts1 = roundPts(Math.min(c1.points, caps[1]));
                 const pts2 = roundPts(Math.min(c2.points, caps[2]));
 
-                const totalPts = pts0 + pts1 + pts2 + (c0.prefScore + c1.prefScore + c2.prefScore) * 0.05;
-                const totalWill = (c0.will || 0) + (c1.will || 0) + (c2.will || 0);
+                const totalPower = pts0 + pts1 + pts2 + sidenodes * 0.05;
 
-                const key = [-totalPts, /*-pref,*/ totalWill];
+                const key = [-totalPower, /*-pref,*/ /*totalWill*/];
                 const candidate: Candidate = {
                     combos: [c0, c1, c2],
                     counts: combined,
                     ptsRaw: [c0.points, c1.points, c2.points],
+                    power: totalPower,
                     will: [c0.will, c1.will, c2.will],
+                    sidenodes,
                     key,
                 };
                 if (!best) {
@@ -191,6 +202,7 @@ function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[]): Optimiza
             }
         }
     }
+    if (best?.ptsRaw.reduce((a, b) => a + b, 0) == 0) return { best: null };
     return { best };
 }
 
@@ -223,11 +235,6 @@ export default function App(): JSX.Element {
     const [classResult, setClassResult] = useState<OptimizationResult | null>(null);
     const [generalResult, setGeneralResult] = useState<OptimizationResult | null>(null);
 
-    useEffect(() => {
-        // initial calculation
-        handleCalculateBoth();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     function updateInv(side: "class" | "general", key: GemKey, oldArray: number[], value: number) {
         const setter = side === "class" ? setClassInv : setGeneralInv;
@@ -302,6 +309,11 @@ export default function App(): JSX.Element {
         }
         return (
             <>
+                <div style={{ padding: "0 4px", marginTop: 12 }}>
+                    <strong style={{ fontSize: 14, color: "#8a96a3" }}>Total Sidenodes: {best.sidenodes}</strong> 
+                    <br/>
+                    <strong style={{ fontSize: 14, color: "#8a96a3" }}>Total Power: {best.power}</strong> 
+                </div>
                 {best.combos.map((c, i) => {
                     const gemCount = (Object.values(c.counts || {}) as Array<number | undefined>).reduce<number>(
                         (a, b) => a + (b || 0),
@@ -315,7 +327,7 @@ export default function App(): JSX.Element {
                                     <span style={{ fontSize: 12, color: "#aaa" }}>({gemCount}) gems</span>
                                 </div>
                                 <div className="small" style={{ color: "#fff" }}>
-                                    WP: {c.will} &nbsp;•&nbsp; Pts: {c.points} &nbsp;•&nbsp; Sidenodes: {c.prefScore}
+                                    WP: {c.will} &nbsp;•&nbsp; Pts: {c.points}
                                 </div>
                             </div>
                             <div className="gem-row">{buildGemCards(c.combo)}</div>
@@ -428,8 +440,10 @@ export default function App(): JSX.Element {
                                             updateCfg("class", i, { rarity: e.target.value as keyof typeof CORE_WILL })
                                         }
                                     >
+                                        <option value="Legendary">Legendary (12 WP)</option>
                                         <option value="Relic">Relic (15 WP)</option>
                                         <option value="Ancient">Ancient (17 WP)</option>
+                                        <option value="None">None (0 WP)</option>
                                     </select>
                                 </label>
                                 {!classAuto && (
@@ -536,8 +550,10 @@ export default function App(): JSX.Element {
                                             })
                                         }
                                     >
+                                        <option value="Legendary">Legendary (12 WP)</option>
                                         <option value="Relic">Relic (15 WP)</option>
                                         <option value="Ancient">Ancient (17 WP)</option>
+                                        <option value="None">None (0 WP)</option>
                                     </select>
                                 </label>
                                 {!generalAuto && (
