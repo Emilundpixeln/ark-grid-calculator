@@ -168,13 +168,14 @@ function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[]): Optimiza
                     if (pts >= 14) return 30;
                     if (pts >= 10) return 15;
                     return pts;
-                }// 52+15+9 = 
+                }// 30+15
 
                 const pts0 = roundPts(Math.min(c0.points, caps[0]));
                 const pts1 = roundPts(Math.min(c1.points, caps[1]));
                 const pts2 = roundPts(Math.min(c2.points, caps[2]));
+            
 
-                const totalPower = pts0 + pts1 + pts2 + sidenodes * 0.05;
+                const totalPower = pts0 + pts1 + pts2 + sidenodes * 0.05 + (pts0 >= 30 && pts1 >= 30 ? 20 : 0);
 
                 const key = [-totalPower, /*-pref,*/ /*totalWill*/];
                 const candidate: Candidate = {
