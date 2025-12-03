@@ -97,7 +97,7 @@ function generateCoreCombos(inv: Inventory, maxWill: number) {
     return finalResults;
 }
 
-function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[]): OptimizationResult {
+function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: boolean): OptimizationResult {
     const perCoreMaxWill = coreConfigs.map((c) => CORE_WILL[c.rarity]);
     const perCoreTarget = coreConfigs.map((c) => c.target || 20);
     inv = Object.fromEntries(Object.entries(inv).map(([k, v]) => [k, v.slice().sort((a, b) => b - a)])) as Inventory;
@@ -175,7 +175,7 @@ function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[]): Optimiza
                 const pts2 = roundPts(Math.min(c2.points, caps[2]));
             
 
-                const totalPower = pts0 + pts1 + pts2 + sidenodes * 0.05 + (pts0 >= 30 && pts1 >= 30 ? 20 : 0);
+                const totalPower = pts0 + pts1 + pts2 + sidenodes * 0.05 + (isOrder && pts0 >= 30 && pts1 >= 30 ? 20 : 0);
 
                 const key = [-totalPower, /*-pref,*/ /*totalWill*/];
                 const candidate: Candidate = {
@@ -257,15 +257,15 @@ export default function App(): JSX.Element {
         });
     }
 
-    function calculateFor(inv: Inventory, cfg: CoreConfig[]) {
-        return optimizeThreeCores(inv, cfg);
+    function calculateFor(inv: Inventory, cfg: CoreConfig[], isOrder: boolean) {
+        return optimizeThreeCores(inv, cfg, isOrder);
     }
 
     function handleCalculateClass() {
-        setClassResult(calculateFor(classInv, classCfg));
+        setClassResult(calculateFor(classInv, classCfg, true));
     }
     function handleCalculateGeneral() {
-        setGeneralResult(calculateFor(generalInv, generalCfg));
+        setGeneralResult(calculateFor(generalInv, generalCfg, false));
     }
     function handleCalculateBoth() {
         handleCalculateClass();
