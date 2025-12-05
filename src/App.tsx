@@ -16,8 +16,8 @@ const ASTROGEMS: Record<GemKey, { will: number; points: number }> = {
 };
 
 const CORE_WILL = { Legendary: 12, Relic: 15, Ancient: 17,  None: 0 } as const;
+const CORE_POINT_CAP = { Legendary: 14, Relic: 20, Ancient: 20,  None: 0 } as const;
 const MAX_SLOTS = 4;
-const GEM_WEIGHT: Record<GemKey, number> = { A: 10, B: 9, C: 8, D: 7, E: 6, F: 5, G: 4, H: 3, K: 2, L: 1 };
 const TOP_N = 300;
 
 type Inventory = Record<GemKey, number[]>;
@@ -36,11 +36,40 @@ type Candidate = {
     key: number[];
     power: number;
     sidenodes: number;
+    combatPowerIncrease: number;
 };
 type OptimizationResult = { best: Candidate | null };
 
 function emptyInventory(): Inventory {
     return { A: [], B: [], C: [], D: [], E: [], F: [], G: [], H: [], K: [], L: [] };
+}
+
+const coreCombatPower = {
+    dps: {
+        order: [
+            //10  14   17   18   19   20
+            [150, 400, 850, 867, 883, 900],
+            [150, 400, 850, 867, 883, 900],
+            [100, 250, 550, 567, 583, 600]
+        ],
+        chaos: [
+            [50, 100, 350, 367, 383, 400],
+            [50, 100, 350, 367, 383, 400],
+            [50, 100, 350, 367, 383, 400]
+        ]
+    },
+    supp: {
+        order: [
+            [120, 120, 900, 918, 930, 942],
+            [120, 120, 900, 918, 930, 942],
+            [0, 60, 300, 310, 320, 330]
+        ],
+        chaos: [
+            [60, 120, 540, 558, 576, 600],
+            [60, 120, 540, 558, 576, 600],
+            [84, 168, 672, 728, 784, 840]
+        ]
+    }
 }
 
 function generateCoreCombos(inv: Inventory, maxWill: number) {
@@ -97,7 +126,7 @@ function generateCoreCombos(inv: Inventory, maxWill: number) {
     return finalResults;
 }
 
-function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: boolean): OptimizationResult {
+function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: boolean, isSupport: boolean): OptimizationResult {
     const perCoreMaxWill = coreConfigs.map((c) => CORE_WILL[c.rarity]);
     const perCoreTarget = coreConfigs.map((c) => c.target || 20);
     inv = Object.fromEntries(Object.entries(inv).map(([k, v]) => [k, v.slice().sort((a, b) => b - a)])) as Inventory;
@@ -107,7 +136,7 @@ function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: 
     const trimmed = combosPerCore.map((list) => list.slice(0, TOP_N));
 
     let best: Candidate | null = null;
-    const caps = perCoreTarget.map((x) => Math.min(x || 20, 20));
+    const caps = perCoreTarget.map((x, i) => Math.min(x || 20, CORE_POINT_CAP[coreConfigs[i].rarity]));
     const [list0, list1, list2] = trimmed;
 
     function fitsInventory(trioCounts: Partial<Record<GemKey, number>>, inventory: Inventory) {
@@ -159,30 +188,33 @@ function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: 
                         sidenodes += inv[key][i];
                     }
                 }
+                const coreRankCombatPower = coreCombatPower[isSupport ? "supp" : "dps"][isOrder ? "order" : "chaos"];
+                function roundPts(pts: number, power: number[]) {
+                    if (pts >= 20) return power[5];
+                    if (pts >= 19) return power[4];
+                    if (pts >= 18) return power[3];
+                    if (pts >= 17) return power[2];
+                    if (pts >= 14) return power[1];
+                    if (pts >= 10) return power[0];
+                    return 0;
+                }
+                const pts0 = Math.min(c0.points, caps[0]);
+                const pts1 = Math.min(c1.points, caps[1]);
+                const pts2 = Math.min(c2.points, caps[2]);
+                const pwr0 = roundPts(pts0, coreRankCombatPower[0]);
+                const pwr1 = roundPts(pts1, coreRankCombatPower[1]);
+                const pwr2 = roundPts(pts2, coreRankCombatPower[2]);
 
-                function roundPts(pts: number) {
-                    if (pts >= 20) return 51;
-                    if (pts >= 19) return 49;
-                    if (pts >= 18) return 47;
-                    if (pts >= 17) return 45;
-                    if (pts >= 14) return 30;
-                    if (pts >= 10) return 15;
-                    return pts;
-                }// 30+15
+                const damagePerSideNode = (isSupport ? 0.00067 : 0.00058) * 10_000;
 
-                const pts0 = roundPts(Math.min(c0.points, caps[0]));
-                const pts1 = roundPts(Math.min(c1.points, caps[1]));
-                const pts2 = roundPts(Math.min(c2.points, caps[2]));
-            
-
-                const totalPower = pts0 + pts1 + pts2 + sidenodes * 0.05 + (isOrder && pts0 >= 30 && pts1 >= 30 ? 20 : 0);
-
-                const key = [-totalPower, /*-pref,*/ /*totalWill*/];
+                const totalPower = pwr0 + pwr1 + pwr2 + sidenodes * damagePerSideNode + (isOrder && pts0 >= 14 && pts1 >= 14 ? 0.05 * 10_000 : 0);
+                const key = [-totalPower, -(pts0 + pts1 + pts2)];
                 const candidate: Candidate = {
                     combos: [c0, c1, c2],
                     counts: combined,
-                    ptsRaw: [c0.points, c1.points, c2.points],
+                    ptsRaw: [pts0, pts1, pts2],
                     power: totalPower,
+                    combatPowerIncrease: (pwr0 + pwr1 + pwr2 + sidenodes * damagePerSideNode) / 10_000,
                     will: [c0.will, c1.will, c2.will],
                     sidenodes,
                     key,
@@ -233,8 +265,13 @@ export default function App(): JSX.Element {
         { rarity: "Relic", target: 20 },
         { rarity: "Relic", target: 20 },
     ]);
+    const [isSupport, setIsSupport] = useState(false);
     const [classResult, setClassResult] = useState<OptimizationResult | null>(null);
     const [generalResult, setGeneralResult] = useState<OptimizationResult | null>(null);
+
+    useEffect(() => {
+        loadInventory(false);
+    }, []);
 
 
     function updateInv(side: "class" | "general", key: GemKey, oldArray: number[], value: number) {
@@ -258,7 +295,7 @@ export default function App(): JSX.Element {
     }
 
     function calculateFor(inv: Inventory, cfg: CoreConfig[], isOrder: boolean) {
-        return optimizeThreeCores(inv, cfg, isOrder);
+        return optimizeThreeCores(inv, cfg, isOrder, isSupport);
     }
 
     function handleCalculateClass() {
@@ -273,23 +310,30 @@ export default function App(): JSX.Element {
     }
 
     function saveInventory() {
-        const data = { class: classInv, general: generalInv };
-        localStorage.setItem("arkGridInventory_v5", JSON.stringify(data));
+        const data = { class: classInv, general: generalInv, isSupport, classCfg, generalCfg };
+        localStorage.setItem("arkGridInventory_v6", JSON.stringify(data));
         alert("Inventory saved");
     }
-    function loadInventory() {
-        const raw = localStorage.getItem("arkGridInventory_v5");
+    function loadInventory(boolAlert: boolean = true) {
+        const raw = localStorage.getItem("arkGridInventory_v6");
         if (!raw) {
-            alert("No saved inventory");
+            if (boolAlert) alert("No saved inventory");
             return;
         }
         try {
             const obj = JSON.parse(raw);
             setClassInv({ ...emptyInventory(), ...(obj.class || {}) });
             setGeneralInv({ ...emptyInventory(), ...(obj.general || {}) });
-            alert("Inventory loaded");
+            setIsSupport(!!obj.isSupport);
+            if (obj.classCfg && Array.isArray(obj.classCfg) && obj.classCfg.length === 3) {
+                setClassCfg(obj.classCfg);
+            }
+            if (obj.generalCfg && Array.isArray(obj.generalCfg) && obj.generalCfg.length === 3) {
+                setGeneralCfg(obj.generalCfg);
+            }
+            if (boolAlert) alert("Inventory loaded");
         } catch (e) {
-            alert("Failed to load");
+            if (boolAlert) alert("Failed to load");
         }
     }
     function resetDefaults() {
@@ -313,7 +357,9 @@ export default function App(): JSX.Element {
                 <div style={{ padding: "0 4px", marginTop: 12 }}>
                     <strong style={{ fontSize: 14, color: "#8a96a3" }}>Total Sidenodes: {best.sidenodes}</strong> 
                     <br/>
-                    <strong style={{ fontSize: 14, color: "#8a96a3" }}>Total Power: {best.power}</strong> 
+                    <strong style={{ fontSize: 14, color: "#8a96a3" }}>Total Power: {best.power}</strong>           
+                    <br/>
+                    <strong style={{ fontSize: 14, color: "#8a96a3" }}>Combat Power Increase: {(best.combatPowerIncrease * 100).toFixed(2)}%</strong> 
                 </div>
                 {best.combos.map((c, i) => {
                     const gemCount = (Object.values(c.counts || {}) as Array<number | undefined>).reduce<number>(
@@ -434,7 +480,7 @@ export default function App(): JSX.Element {
                         {classCfg.map((cfg, i) => (
                             <div className="core-config" key={i}>
                                 <label>
-                                    Core {i + 1} Type:
+                                    Order {["Sun", "Moon", "Star"][i]} Type:
                                     <select
                                         value={cfg.rarity}
                                         onChange={(e) =>
@@ -447,6 +493,8 @@ export default function App(): JSX.Element {
                                         <option value="None">None (0 WP)</option>
                                     </select>
                                 </label>
+
+                              
                                 {!classAuto && (
                                     <label>
                                         Target:
@@ -542,7 +590,7 @@ export default function App(): JSX.Element {
                         {generalCfg.map((cfg, i) => (
                             <div className="core-config" key={i}>
                                 <label>
-                                    Core {i + 1} Type:
+                                    Chaos {["Sun", "Moon", "Star"][i]} Core Type:
                                     <select
                                         value={cfg.rarity}
                                         onChange={(e) =>
@@ -585,10 +633,13 @@ export default function App(): JSX.Element {
             </div>
 
             <div className="common-controls">
+             <button className="secondary" onClick={() => setIsSupport(!isSupport)}>
+                    Is Support: {isSupport ? "Yes" : "No"}
+                </button>
                 <button className="secondary" onClick={saveInventory}>
                     Save Inventory
                 </button>
-                <button className="secondary" onClick={loadInventory}>
+                <button className="secondary" onClick={() => loadInventory(true)}>
                     Load Inventory
                 </button>
                 <div style={{ width: 20 }} />
