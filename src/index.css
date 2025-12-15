@@ -92,6 +92,7 @@ p.note {
 
 table { width: 100%; border-collapse: separate; border-spacing: 0 4px; margin-bottom: 16px; }
 th { text-align: center; font-family: 'Cinzel', serif; color: var(--text-muted); font-size: 12px; text-transform: uppercase; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+th span { display: block; font-size: 12px; font-weight: 400; color: var(--text-muted); margin-top: 2px; text-transform: none; }
 td { padding: 4px; text-align: center; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.03); }
 tr:hover td { background: rgba(255,255,255,0.05); }
 

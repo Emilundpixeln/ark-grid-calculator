@@ -117,6 +117,7 @@ function generateCoreCombos(inv: Inventory, maxWill: number) {
         .forEach((pts) => {
             const group = byPoints[pts];
             group.sort((a, b) => a.will - b.will);
+            console.log(`Points ${pts}: ${group.length} combos`);
             const efficient = group.slice(0, 100);
             const inefficient = group.slice(-50).reverse();
             const combined = Array.from(new Set([...efficient, ...inefficient])) as Combo[];
@@ -205,7 +206,7 @@ function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: 
                 const pwr1 = roundPts(pts1, coreRankCombatPower[1]);
                 const pwr2 = roundPts(pts2, coreRankCombatPower[2]);
 
-                const damagePerSideNode = (isSupport ? 0.00067 : 0.00058) * 10_000;
+                const damagePerSideNode = (isSupport ? 0.00052 : 0.000314) * 10_000;
 
                 const totalPower = pwr0 + pwr1 + pwr2 + sidenodes * damagePerSideNode + (isOrder && pts0 >= 14 && pts1 >= 14 ? 0.05 * 10_000 : 0);
                 const key = [-totalPower, -(pts0 + pts1 + pts2)];
@@ -231,7 +232,11 @@ function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: 
                     }
                     if (key[k] > best.key[k]) break;
                 }
-                if (better) best = candidate;
+                if (better) {
+                    best = candidate;
+                    // format 
+                    console.log(`New best has power ${totalPower} = ${pwr0}+${pwr1}+${pwr2}+${sidenodes}*${damagePerSideNode} (${sidenodes*damagePerSideNode}) pts ${pts0},${pts1},${pts2}`);
+                }
             }
         }
     }
@@ -420,7 +425,7 @@ export default function App(): JSX.Element {
                                 <th>Will</th>
                                 <th>Pts</th>
                                 <th>Qty</th>
-                                <th>Side Points</th>
+                                <th>Side Points <span >{ isSupport ? "Brand Power & Ally Attack count 2x" : "Add.Dmg & Boss Dmg count 2x"  }</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -444,14 +449,14 @@ export default function App(): JSX.Element {
                                             <input
                                                 type="number"
                                                 min={0}
-                                                max={10}
+                                                max={20}
                                                 key={idx}
                                                 value={classInv[k][idx]}
                                                 onChange={(e) => {
                                                     const newArray = [...classInv[k]];
                                                     newArray[idx] = Math.max(
                                                         0,
-                                                        Math.min(10, Math.floor(Number(e.target.value)))
+                                                        Math.min(20, Math.floor(Number(e.target.value)))
                                                     );
                                                     setClassInv((prev) => ({ ...prev, [k]: newArray }));
                                                 }}
@@ -528,7 +533,7 @@ export default function App(): JSX.Element {
                                 <th>Will</th>
                                 <th>Pts</th>
                                 <th>Qty</th>
-                                <th>Side Points</th>
+                                <th>Side Points <span >{ isSupport ? "Brand Power & Ally Attack count 2x" : "Add.Dmg & Boss Dmg count 2x"  }</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -554,14 +559,14 @@ export default function App(): JSX.Element {
                                             <input
                                                 type="number"
                                                 min={0}
-                                                max={10}
+                                                max={20}
                                                 key={idx}
                                                 value={generalInv[k][idx]}
                                                 onChange={(e) => {
                                                     const newArray = [...generalInv[k]];
                                                     newArray[idx] = Math.max(
                                                         0,
-                                                        Math.min(10, Math.floor(Number(e.target.value)))
+                                                        Math.min(20, Math.floor(Number(e.target.value)))
                                                     );
                                                     setGeneralInv((prev) => ({ ...prev, [k]: newArray }));
                                                 }}
