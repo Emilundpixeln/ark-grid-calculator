@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-type GemKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "K" | "L";
+type GemKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "K" | "L" | "M" | "N" | "O" | "P";
 
 const ASTROGEMS: Record<GemKey, { will: number; points: number }> = {
     A: { will: 3, points: 5 },
@@ -13,6 +13,11 @@ const ASTROGEMS: Record<GemKey, { will: number; points: number }> = {
     H: { will: 5, points: 4 },
     K: { will: 5, points: 3 },
     L: { will: 6, points: 5 },
+    // extra
+    M: { will: 6, points: 4 },
+    N: { will: 6, points: 3 },
+    O: { will: 7, points: 5 },
+    P: { will: 4, points: 2 },
 };
 
 const CORE_WILL = { Legendary: 12, Relic: 15, Ancient: 17,  None: 0 } as const;
@@ -21,7 +26,7 @@ const MAX_SLOTS = 4;
 const TOP_N = 300;
 
 type Inventory = Record<GemKey, number[]>;
-type CoreConfig = { rarity: keyof typeof CORE_WILL; target: number };
+type CoreConfig = { rarity: keyof typeof CORE_WILL; target: number; min: number };
 type Combo = {
     combo: GemKey[];
     counts: Partial<Record<GemKey, number>>;
@@ -41,7 +46,7 @@ type Candidate = {
 type OptimizationResult = { best: Candidate | null };
 
 function emptyInventory(): Inventory {
-    return { A: [], B: [], C: [], D: [], E: [], F: [], G: [], H: [], K: [], L: [] };
+    return { A: [], B: [], C: [], D: [], E: [], F: [], G: [], H: [], K: [], L: [], M: [], N: [], O: [], P: [] };
 }
 
 const coreCombatPower = {
@@ -72,7 +77,7 @@ const coreCombatPower = {
     }
 }
 
-function generateCoreCombos(inv: Inventory, maxWill: number) {
+function generateCoreCombos(inv: Inventory, maxWill: number, minPoints: number): Combo[] {
     const types = Object.keys(ASTROGEMS) as GemKey[];
     const results: Combo[] = [];
 
@@ -84,7 +89,7 @@ function generateCoreCombos(inv: Inventory, maxWill: number) {
             will += ASTROGEMS[t].will;
             points += ASTROGEMS[t].points;
         }
-        if (will <= maxWill) {
+        if (will <= maxWill && points >= minPoints) {
             results.push({ combo: combo.slice(), counts: { ...counts }, will, points });
         }
         //}
@@ -128,11 +133,10 @@ function generateCoreCombos(inv: Inventory, maxWill: number) {
 }
 
 function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: boolean, isSupport: boolean): OptimizationResult {
-    const perCoreMaxWill = coreConfigs.map((c) => CORE_WILL[c.rarity]);
     const perCoreTarget = coreConfigs.map((c) => c.target || 20);
     inv = Object.fromEntries(Object.entries(inv).map(([k, v]) => [k, v.slice().sort((a, b) => b - a)])) as Inventory;
 
-    const combosPerCore = perCoreMaxWill.map((w) => generateCoreCombos(inv, w));
+    const combosPerCore = coreConfigs.map((cfg) => generateCoreCombos(inv, CORE_WILL[cfg.rarity], cfg.min));
     //if(combosPerCore.some(list=>list.length===0)) return { best: null }
     const trimmed = combosPerCore.map((list) => list.slice(0, TOP_N));
 
@@ -255,20 +259,195 @@ function buildGemCards(combo: GemKey[]) {
     ));
 }
 
+function InventoryComponent({
+        type,
+        isSupport,
+        gemKeys,
+        inv,
+        setInv,
+        autoTarget,
+        setAutoTarget,
+        config,
+        setConfig,
+        showExtraGems,
+        setShowExtraGems,
+        handleCalculate,
+    }: {
+        type: "class" | "general"
+        isSupport: boolean
+        gemKeys: GemKey[]
+        inv: Inventory
+        setInv: React.Dispatch<React.SetStateAction<Inventory>>
+        autoTarget: boolean
+        setAutoTarget: React.Dispatch<React.SetStateAction<boolean>>
+        config: CoreConfig[]
+        setConfig: React.Dispatch<React.SetStateAction<CoreConfig[]>>
+        showExtraGems: boolean
+        setShowExtraGems: React.Dispatch<React.SetStateAction<boolean>>
+        handleCalculate: () => void
+    }) {
+    function updateInv(key: GemKey, oldArray: number[], value: number) {
+        const newArray = [...oldArray];
+        if (value > oldArray.length) {
+            while (newArray.length < value) newArray.push(0);
+        } else {
+            newArray.length = value;
+        }
+        setInv((prev) => ({ ...prev, [key]: newArray }));
+    }
+
+    function updateCfg(index: number, next: Partial<CoreConfig>) {
+        setConfig((prev) => {
+            const arr = prev.slice();
+            arr[index] = { ...arr[index], ...next };
+            return arr;
+        });
+    }
+
+    return <>
+        <h2 className="section-title">{type == "class" ? "Class" : "General"} Inventory</h2>
+        <table aria-label="Class inventory">
+            <thead>
+                <tr>
+                    <th>Gem</th>
+                    <th>Will</th>
+                    <th>Pts</th>
+                    <th>Qty</th>
+                    <th>Side Points <span >{ isSupport ? "Brand Power & Ally Attack count 2x" : "Add.Dmg & Boss Dmg count 2x"  }</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {gemKeys.map((k) => (
+                    <tr key={k} style={k == "M" ? { marginTop: "1rem"} : {}}>
+                        <td>
+                            <span style={{ color: "inherit" }}>{k}</span>
+                        </td>
+                        <td>{ASTROGEMS[k].will}</td>
+                        <td>{ASTROGEMS[k].points}</td>
+                        <td>
+                            <input
+                                type="number"
+                                min={0}
+                                value={inv[k].length}
+                                onChange={(e) => updateInv(k, inv[k], Number(e.target.value))}
+                            />
+                        </td>
+                        <td>
+                            {inv[k].map((_, idx) => (
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={20}
+                                    key={idx}
+                                    value={inv[k][idx]}
+                                    onChange={(e) => {
+                                        const newArray = [...inv[k]];
+                                        newArray[idx] = Math.max(
+                                            0,
+                                            Math.min(20, Math.floor(Number(e.target.value)))
+                                        );
+                                        setInv((prev) => ({ ...prev, [k]: newArray }));
+                                    }}
+                                />
+                            ))}
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+            <button className="muted-small" onClick={() => setShowExtraGems(!showExtraGems)}>
+                {showExtraGems ? "Hide" : "Show"} rarely used gems
+            </button>
+        </div>
+
+        <div
+            style={{ marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 8 }}
+        >
+            <label>
+                <input
+                    type="checkbox"
+                    checked={autoTarget}
+                    onChange={(e) => setAutoTarget(e.target.checked)}
+                />{" "}
+                Auto Target (20pts priority)
+            </label>
+        </div>
+
+        <div>
+            {config.map((cfg, i) => (
+                <div className="core-config" key={i}>
+                    <label>
+                        Order {["Sun", "Moon", "Star"][i]} Type:
+                        <select
+                            value={cfg.rarity}
+                            onChange={(e) =>
+                                updateCfg(i, { rarity: e.target.value as keyof typeof CORE_WILL })
+                            }
+                        >
+                            <option value="Legendary">Legendary (12 WP)</option>
+                            <option value="Relic">Relic (15 WP)</option>
+                            <option value="Ancient">Ancient (17 WP)</option>
+                            <option value="None">None (0 WP)</option>
+                        </select>
+                    </label>
+
+                    
+                    {!autoTarget && (
+                        <>
+                            <label>
+                                Target:
+                                <select
+                                    value={String(cfg.target)}
+                                    onChange={(e) => updateCfg(i, { target: Number(e.target.value) })}
+                                >
+                                    {Array.from({ length: 11 }, (_, k) => 10 + k).map((v) => (
+                                        <option key={v} value={v}>
+                                            {v}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label>
+                                Min:
+                                <select
+                                    value={String(cfg.min)}
+                                    onChange={(e) => updateCfg(i, { min: Number(e.target.value) })}
+                                >
+                                    {[0, 10, 14, 17].map((v) => (
+                                        <option key={v} value={v}>
+                                            {v}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                        </>
+                    )}
+                </div>
+            ))}
+        </div>
+
+        <div className="panel-btn-row">
+            <button onClick={handleCalculate}>Calculate</button>
+        </div>
+    </>
+}
+
 export default function App(): JSX.Element {
     const [classInv, setClassInv] = useState<Inventory>(() => emptyInventory());
     const [generalInv, setGeneralInv] = useState<Inventory>(() => emptyInventory());
     const [classAuto, setClassAuto] = useState(true);
     const [generalAuto, setGeneralAuto] = useState(true);
+    const [showExtraGems, setShowExtraGems] = useState(false);
     const [classCfg, setClassCfg] = useState<CoreConfig[]>(() => [
-        { rarity: "Relic", target: 20 },
-        { rarity: "Relic", target: 20 },
-        { rarity: "Relic", target: 20 },
+        { rarity: "Relic", target: 20, min: 0 },
+        { rarity: "Relic", target: 20, min: 0 },
+        { rarity: "Relic", target: 20, min: 0 },
     ]);
     const [generalCfg, setGeneralCfg] = useState<CoreConfig[]>(() => [
-        { rarity: "Relic", target: 20 },
-        { rarity: "Relic", target: 20 },
-        { rarity: "Relic", target: 20 },
+        { rarity: "Relic", target: 20, min: 0 },
+        { rarity: "Relic", target: 20, min: 0 },
+        { rarity: "Relic", target: 20, min: 0 },
     ]);
     const [isSupport, setIsSupport] = useState(false);
     const [classResult, setClassResult] = useState<OptimizationResult | null>(null);
@@ -277,27 +456,6 @@ export default function App(): JSX.Element {
     useEffect(() => {
         loadInventory(false);
     }, []);
-
-
-    function updateInv(side: "class" | "general", key: GemKey, oldArray: number[], value: number) {
-        const setter = side === "class" ? setClassInv : setGeneralInv;
-        const newArray = [...oldArray];
-        if (value > oldArray.length) {
-            while (newArray.length < value) newArray.push(0);
-        } else {
-            newArray.length = value;
-        }
-        setter((prev) => ({ ...prev, [key]: newArray }));
-    }
-
-    function updateCfg(side: "class" | "general", index: number, next: Partial<CoreConfig>) {
-        const setter = side === "class" ? setClassCfg : setGeneralCfg;
-        setter((prev) => {
-            const arr = prev.slice();
-            arr[index] = { ...arr[index], ...next };
-            return arr;
-        });
-    }
 
     function calculateFor(inv: Inventory, cfg: CoreConfig[], isOrder: boolean) {
         return optimizeThreeCores(inv, cfg, isOrder, isSupport);
@@ -331,9 +489,19 @@ export default function App(): JSX.Element {
             setGeneralInv({ ...emptyInventory(), ...(obj.general || {}) });
             setIsSupport(!!obj.isSupport);
             if (obj.classCfg && Array.isArray(obj.classCfg) && obj.classCfg.length === 3) {
+                obj.classCfg.forEach((c: any) => {
+                    if (!c.rarity || !(c.rarity in CORE_WILL)) c.rarity = "Relic";
+                    if (typeof c.target !== "number") c.target = 20;
+                    if (typeof c.min !== "number") c.min = 0;
+                });
                 setClassCfg(obj.classCfg);
             }
             if (obj.generalCfg && Array.isArray(obj.generalCfg) && obj.generalCfg.length === 3) {
+                obj.generalCfg.forEach((c: any) => {
+                    if (!c.rarity || !(c.rarity in CORE_WILL)) c.rarity = "Relic";
+                    if (typeof c.target !== "number") c.target = 20;
+                    if (typeof c.min !== "number") c.min = 0;
+                });
                 setGeneralCfg(obj.generalCfg);
             }
             if (boolAlert) alert("Inventory loaded");
@@ -417,223 +585,36 @@ export default function App(): JSX.Element {
 
             <div className="page">
                 <div className="half left">
-                    <h2 className="section-title">Class Inventory</h2>
-                    <table aria-label="Class inventory">
-                        <thead>
-                            <tr>
-                                <th>Gem</th>
-                                <th>Will</th>
-                                <th>Pts</th>
-                                <th>Qty</th>
-                                <th>Side Points <span >{ isSupport ? "Brand Power & Ally Attack count 2x" : "Add.Dmg & Boss Dmg count 2x"  }</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {gemKeys.map((k) => (
-                                <tr key={k}>
-                                    <td>
-                                        <span style={{ color: "inherit" }}>{k}</span>
-                                    </td>
-                                    <td>{ASTROGEMS[k].will}</td>
-                                    <td>{ASTROGEMS[k].points}</td>
-                                    <td>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            value={classInv[k].length}
-                                            onChange={(e) => updateInv("class", k, classInv[k], Number(e.target.value))}
-                                        />
-                                    </td>
-                                    <td>
-                                        {classInv[k].map((_, idx) => (
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                max={20}
-                                                key={idx}
-                                                value={classInv[k][idx]}
-                                                onChange={(e) => {
-                                                    const newArray = [...classInv[k]];
-                                                    newArray[idx] = Math.max(
-                                                        0,
-                                                        Math.min(20, Math.floor(Number(e.target.value)))
-                                                    );
-                                                    setClassInv((prev) => ({ ...prev, [k]: newArray }));
-                                                }}
-                                            />
-                                        ))}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-
-                    <div
-                        style={{ marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 8 }}
-                    >
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={classAuto}
-                                onChange={(e) => setClassAuto(e.target.checked)}
-                            />{" "}
-                            Auto Target (20pts priority)
-                        </label>
-                    </div>
-
-                    <div>
-                        {classCfg.map((cfg, i) => (
-                            <div className="core-config" key={i}>
-                                <label>
-                                    Order {["Sun", "Moon", "Star"][i]} Type:
-                                    <select
-                                        value={cfg.rarity}
-                                        onChange={(e) =>
-                                            updateCfg("class", i, { rarity: e.target.value as keyof typeof CORE_WILL })
-                                        }
-                                    >
-                                        <option value="Legendary">Legendary (12 WP)</option>
-                                        <option value="Relic">Relic (15 WP)</option>
-                                        <option value="Ancient">Ancient (17 WP)</option>
-                                        <option value="None">None (0 WP)</option>
-                                    </select>
-                                </label>
-
-                              
-                                {!classAuto && (
-                                    <label>
-                                        Target:
-                                        <select
-                                            value={String(cfg.target)}
-                                            onChange={(e) => updateCfg("class", i, { target: Number(e.target.value) })}
-                                        >
-                                            {Array.from({ length: 11 }, (_, k) => 10 + k).map((v) => (
-                                                <option key={v} value={v}>
-                                                    {v}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="panel-btn-row">
-                        <button onClick={handleCalculateClass}>Calculate</button>
-                    </div>
+                    <InventoryComponent 
+                        type="class" 
+                        isSupport={isSupport} 
+                        gemKeys={showExtraGems ? gemKeys : gemKeys.filter(k => !["M","N","O","P"].includes(k))} 
+                        inv={classInv} 
+                        setInv={setClassInv} 
+                        autoTarget={classAuto} 
+                        setAutoTarget={setClassAuto} 
+                        config={classCfg} 
+                        setConfig={setClassCfg} 
+                        showExtraGems={showExtraGems} 
+                        setShowExtraGems={setShowExtraGems} 
+                        handleCalculate={handleCalculateClass}
+                    />
                 </div>
-
                 <div className="half right">
-                    <h2 className="section-title">General Inventory</h2>
-                    <table aria-label="General inventory">
-                        <thead>
-                            <tr>
-                                <th>Gem</th>
-                                <th>Will</th>
-                                <th>Pts</th>
-                                <th>Qty</th>
-                                <th>Side Points <span >{ isSupport ? "Brand Power & Ally Attack count 2x" : "Add.Dmg & Boss Dmg count 2x"  }</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {gemKeys.map((k) => (
-                                <tr key={k}>
-                                    <td>
-                                        <span style={{ color: "inherit" }}>{k}</span>
-                                    </td>
-                                    <td>{ASTROGEMS[k].will}</td>
-                                    <td>{ASTROGEMS[k].points}</td>
-                                    <td>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            value={generalInv[k].length}
-                                            onChange={(e) =>
-                                                updateInv("general", k, generalInv[k], Number(e.target.value))
-                                            }
-                                        />
-                                    </td>
-                                    <td>
-                                        {generalInv[k].map((_, idx) => (
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                max={20}
-                                                key={idx}
-                                                value={generalInv[k][idx]}
-                                                onChange={(e) => {
-                                                    const newArray = [...generalInv[k]];
-                                                    newArray[idx] = Math.max(
-                                                        0,
-                                                        Math.min(20, Math.floor(Number(e.target.value)))
-                                                    );
-                                                    setGeneralInv((prev) => ({ ...prev, [k]: newArray }));
-                                                }}
-                                            />
-                                        ))}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-
-                    <div
-                        style={{ marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 8 }}
-                    >
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={generalAuto}
-                                onChange={(e) => setGeneralAuto(e.target.checked)}
-                            />{" "}
-                            Auto Target (20pts priority)
-                        </label>
-                    </div>
-
-                    <div>
-                        {generalCfg.map((cfg, i) => (
-                            <div className="core-config" key={i}>
-                                <label>
-                                    Chaos {["Sun", "Moon", "Star"][i]} Core Type:
-                                    <select
-                                        value={cfg.rarity}
-                                        onChange={(e) =>
-                                            updateCfg("general", i, {
-                                                rarity: e.target.value as keyof typeof CORE_WILL,
-                                            })
-                                        }
-                                    >
-                                        <option value="Legendary">Legendary (12 WP)</option>
-                                        <option value="Relic">Relic (15 WP)</option>
-                                        <option value="Ancient">Ancient (17 WP)</option>
-                                        <option value="None">None (0 WP)</option>
-                                    </select>
-                                </label>
-                                {!generalAuto && (
-                                    <label>
-                                        Target:
-                                        <select
-                                            value={String(cfg.target)}
-                                            onChange={(e) =>
-                                                updateCfg("general", i, { target: Number(e.target.value) })
-                                            }
-                                        >
-                                            {Array.from({ length: 11 }, (_, k) => 10 + k).map((v) => (
-                                                <option key={v} value={v}>
-                                                    {v}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="panel-btn-row">
-                        <button onClick={handleCalculateGeneral}>Calculate</button>
-                    </div>
+                    <InventoryComponent 
+                        type="general" 
+                        isSupport={isSupport} 
+                        gemKeys={showExtraGems ? gemKeys : gemKeys.filter(k => !["M","N","O","P"].includes(k))}
+                        inv={generalInv} 
+                        setInv={setGeneralInv} 
+                        autoTarget={generalAuto} 
+                        setAutoTarget={setGeneralAuto} 
+                        config={generalCfg} 
+                        setConfig={setGeneralCfg} 
+                        showExtraGems={showExtraGems} 
+                        setShowExtraGems={setShowExtraGems} 
+                        handleCalculate={handleCalculateGeneral}
+                    />
                 </div>
             </div>
 

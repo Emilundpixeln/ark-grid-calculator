@@ -149,6 +149,16 @@ button.secondary {
 }
 button.secondary:hover { border-color: var(--text-main); color: #fff; }
 
+button.muted-small {
+  background: linear-gradient(180deg, #1a1c1e 0%, #0f1012 100%);
+  border-color: #22272b; color: var(--text-muted); font-size: 12px; padding: 6px 10px;
+}
+
+button.muted-small:hover {
+  background: linear-gradient(180deg, #2a2e33 0%, #181a1d 100%);
+  border-color: #4a525c; color: var(--la-silver);
+}
+
 button.primary-gold {
   background: linear-gradient(180deg, #5e3d3d 0%, #3a1f1f 100%); 
   border-color: #8a4b4b; color: var(--la-highlight);
@@ -160,6 +170,18 @@ button.primary-gold:hover {
 }
 
 .small { font-size: 12px; color: var(--text-muted); margin-top: 8px; display: block; }
+
+.tooltip {
+  position: absolute;
+  z-index: 100; 
+  background: linear-gradient(180deg, #2a2e33 0%, #181a1d 100%);
+  font-size: 12px; 
+  color: var(--text-muted);
+  top: -200%;
+  padding: 4px 8px; 
+  border-radius: 4px; 
+  border: 1px solid #333;
+}
 
 #resultsArea { margin-top: 20px; display: flex; gap: var(--gap); justify-content: center; flex-wrap: wrap; }
 .results-half { flex: 1; min-width: 340px; max-width: 600px; background: var(--bg-panel); border: 1px solid #333; padding: 20px; position: relative; }
@@ -204,6 +226,10 @@ button.primary-gold:hover {
 .gem-H { background: radial-gradient(circle at 30% 30%, #3f51b5, #1a237e); border-color: #7986cb; }
 .gem-K { background: radial-gradient(circle at 30% 30%, #9c27b0, #4a148c); border-color: #ce93d8; }
 .gem-L { background: radial-gradient(circle at 30% 30%, #78909c, #37474f); border-color: #b0bec5; }
+.gem-M { background: radial-gradient(circle at 30% 30%, #ff4081, #880e4f); border-color: #ff80ab; }
+.gem-N { background: radial-gradient(circle at 30% 30%, #607d8b, #263238); border-color: #90a4ae; }
+.gem-O { background: radial-gradient(circle at 30% 30%, #b6a829, #b45d11); border-color: #fff176; }
+.gem-P { background: radial-gradient(circle at 30% 30%, #c77700, #a13901); border-color: #ffb74d; }
 
 .gem-type { font-size: 18px; font-family: 'Cinzel', serif; }
 .gem-sub { font-size: 10px; font-weight: 400; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; }
