@@ -1,2 +1,12 @@
 /node_modules/
 /dist/
+/ws_src/*.js
+/ws_src/*.wasm
+/ws_src/Astrogem
+/ws_src/*.exe
+/ws_src/*.o
+/ws_src/*.obj
+/ws_src/*.pdb
+/ws_src/*.ilk
+/.vs/
+/.vscode/

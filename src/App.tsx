@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import ModuleFactory, { IntVector } from '../ws_src/main'
 
 type GemKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "K" | "L" | "M" | "N" | "O" | "P";
 
@@ -21,9 +22,6 @@ const ASTROGEMS: Record<GemKey, { will: number; points: number }> = {
 };
 
 const CORE_WILL = { Legendary: 12, Relic: 15, Ancient: 17,  None: 0 } as const;
-const CORE_POINT_CAP = { Legendary: 14, Relic: 20, Ancient: 20,  None: 0 } as const;
-const MAX_SLOTS = 4;
-const TOP_N = 300;
 
 type Inventory = Record<GemKey, number[]>;
 type CoreConfig = { rarity: keyof typeof CORE_WILL; target: number; min: number };
@@ -38,222 +36,89 @@ type Candidate = {
     counts: Partial<Record<GemKey, number>>;
     ptsRaw: number[];
     will: number[];
-    key: number[];
     power: number;
     sidenodes: number;
     combatPowerIncrease: number;
 };
+
 type OptimizationResult = { best: Candidate | null };
 
 function emptyInventory(): Inventory {
     return { A: [], B: [], C: [], D: [], E: [], F: [], G: [], H: [], K: [], L: [], M: [], N: [], O: [], P: [] };
 }
 
-const coreCombatPower = {
-    dps: {
-        order: [
-            //10  14   17   18   19   20
-            [150, 400, 850, 867, 883, 900],
-            [150, 400, 850, 867, 883, 900],
-            [100, 250, 550, 567, 583, 600]
-        ],
-        chaos: [
-            [50, 100, 350, 367, 383, 400],
-            [50, 100, 350, 367, 383, 400],
-            [50, 100, 350, 367, 383, 400]
-        ]
-    },
-    supp: {
-        order: [
-            [120, 120, 900, 918, 930, 942],
-            [120, 120, 900, 918, 930, 942],
-            [0, 60, 300, 310, 320, 330]
-        ],
-        chaos: [
-            [60, 120, 540, 558, 576, 600],
-            [60, 120, 540, 558, 576, 600],
-            [84, 168, 672, 728, 784, 840]
-        ]
-    }
-}
-
-function generateCoreCombos(inv: Inventory, maxWill: number, minPoints: number): Combo[] {
-    const types = Object.keys(ASTROGEMS) as GemKey[];
-    const results: Combo[] = [];
-
-    function backtrack(start: number, combo: GemKey[], counts: Partial<Record<GemKey, number>>) {
-        //if(combo.length>0){
-        let will = 0,
-            points = 0;
-        for (const t of combo) {
-            will += ASTROGEMS[t].will;
-            points += ASTROGEMS[t].points;
-        }
-        if (will <= maxWill && points >= minPoints) {
-            results.push({ combo: combo.slice(), counts: { ...counts }, will, points });
-        }
-        //}
-        if (combo.length === MAX_SLOTS) return;
-        for (let i = start; i < types.length; i++) {
-            const t = types[i];
-            const used = counts[t] || 0;
-            if (used < (inv[t] || 0).length) {
-                combo.push(t);
-                counts[t] = (used as number) + 1;
-                backtrack(i, combo, counts);
-                combo.pop();
-                if (used === 0) delete counts[t];
-                else counts[t] = used;
-            }
-        }
-    }
-
-    backtrack(0, [], {});
-
-    const byPoints: Record<number, Combo[]> = {};
-    for (const r of results) {
-        (byPoints[r.points] ||= []).push(r);
-    }
-
-    const finalResults: Combo[] = [];
-    Object.keys(byPoints)
-        .map((k) => parseInt(k))
-        .sort((a, b) => b - a)
-        .forEach((pts) => {
-            const group = byPoints[pts];
-            group.sort((a, b) => a.will - b.will);
-            console.log(`Points ${pts}: ${group.length} combos`);
-            const efficient = group.slice(0, 100);
-            const inefficient = group.slice(-50).reverse();
-            const combined = Array.from(new Set([...efficient, ...inefficient])) as Combo[];
-            finalResults.push(...combined);
-        });
-
-    return finalResults;
-}
+let Module: Awaited<ReturnType<typeof ModuleFactory>> | null = null;
+(async () => {
+    Module = await ModuleFactory()
+})();
 
 function optimizeThreeCores(inv: Inventory, coreConfigs: CoreConfig[], isOrder: boolean, isSupport: boolean): OptimizationResult {
-    const perCoreTarget = coreConfigs.map((c) => c.target || 20);
-    inv = Object.fromEntries(Object.entries(inv).map(([k, v]) => [k, v.slice().sort((a, b) => b - a)])) as Inventory;
-
-    const combosPerCore = coreConfigs.map((cfg) => generateCoreCombos(inv, CORE_WILL[cfg.rarity], cfg.min));
-    //if(combosPerCore.some(list=>list.length===0)) return { best: null }
-    const trimmed = combosPerCore.map((list) => list.slice(0, TOP_N));
-
-    let best: Candidate | null = null;
-    const caps = perCoreTarget.map((x, i) => Math.min(x || 20, CORE_POINT_CAP[coreConfigs[i].rarity]));
-    const [list0, list1, list2] = trimmed;
-
-    function fitsInventory(trioCounts: Partial<Record<GemKey, number>>, inventory: Inventory) {
-        for (const t of Object.keys(ASTROGEMS) as GemKey[])
-            if ((trioCounts[t] || 0) > inventory[t].length) return false;
-        return true;
+    const gemKeys =  ["A", "B", "C", "D", "E", "F", "G", "H", "K", "L", "M", "N", "O", "P"] as GemKey[];
+    const inventory = gemKeys.map(k => inv[k])
+    const cores = coreConfigs.map(cfg => ({
+        rarity: { Legendary: 0, Relic: 1, Ancient: 2, None: 3 }[cfg.rarity],
+        target: cfg.target,
+        minPoints: cfg.min
+    }))
+    const inventoryWs = new Module!.Inventory()
+    const rows: IntVector[] = []
+    for (const arr of inventory) {
+            const vec = new Module!.IntVector()
+            for (const v of arr) {
+            vec.push_back(v)
+        }
+        inventoryWs.push_back(vec)
     }
 
-    for (let i0 = 0; i0 < list0.length; i0++) {
-        const c0 = list0[i0];
-        for (let i1 = 0; i1 < list1.length; i1++) {
-            const c1 = list1[i1];
-            const partial: Partial<Record<GemKey, number>> = {};
-            const c0counts = c0.counts as Partial<Record<GemKey, number>>;
-            const c1counts = c1.counts as Partial<Record<GemKey, number>>;
-            for (const t of Object.keys(c0counts)) {
-                const key = t as GemKey;
-                partial[key] = (partial[key] || 0) + (c0counts[key] || 0);
-            }
-            for (const t of Object.keys(c1counts)) {
-                const key = t as GemKey;
-                partial[key] = (partial[key] || 0) + (c1counts[key] || 0);
-            }
-            let ok01 = true;
-            for (const t of Object.keys(partial)) {
-                const key = t as GemKey;
-                if ((partial[key] || 0) > inv[key].length) {
-                    ok01 = false;
-                    break;
-                }
-            }
-            if (!ok01) continue;
+    const coreConfigsWs = new Module!.CoreConfigs()
+    for (const c of cores) {
+        coreConfigsWs.push_back(c)
+    }
+    console.log("Calculating...");
+    let start = performance.now();
+    const result = Module?.optimizeThreeCores(inventoryWs, coreConfigsWs, isOrder, isSupport)
+    console.log("Calculation took", performance.now() - start, "ms");
+    for (const row of rows) {
+        row.delete()
+    }
+    inventoryWs.delete()
+    coreConfigsWs.delete()
 
-            for (let i2 = 0; i2 < list2.length; i2++) {
-                const c2 = list2[i2];
-                const combined: Partial<Record<GemKey, number>> = { ...partial };
-                const c2counts = c2.counts as Partial<Record<GemKey, number>>;
-                for (const t of Object.keys(c2counts)) {
-                    const key = t as GemKey;
-                    combined[key] = (combined[key] || 0) + (c2counts[key] || 0);
-                }
-                if (!fitsInventory(combined, inv)) continue;
+    if (!result?.hasBest) return { best: null }
 
-                let sidenodes = 0
-                for (const t of Object.keys(combined)) {
-                    const key = t as GemKey;
-                    const used = combined[key] as number;
-                    for (let i = 0; i < used; i++) {
-                        sidenodes += inv[key][i];
-                    }
-                }
-                const coreRankCombatPower = coreCombatPower[isSupport ? "supp" : "dps"][isOrder ? "order" : "chaos"];
-                function roundPts(pts: number, power: number[]) {
-                    if (pts >= 20) return power[5];
-                    if (pts >= 19) return power[4];
-                    if (pts >= 18) return power[3];
-                    if (pts >= 17) return power[2];
-                    if (pts >= 14) return power[1];
-                    if (pts >= 10) return power[0];
-                    return 0;
-                }
-                const pts0 = Math.min(c0.points, caps[0]);
-                const pts1 = Math.min(c1.points, caps[1]);
-                const pts2 = Math.min(c2.points, caps[2]);
-                const pwr0 = roundPts(pts0, coreRankCombatPower[0]);
-                const pwr1 = roundPts(pts1, coreRankCombatPower[1]);
-                const pwr2 = roundPts(pts2, coreRankCombatPower[2]);
+    const best = result.best!!
 
-                const damagePerSideNode = (isSupport ? 0.00052 : 0.000314) * 10_000;
-
-                const totalPower = pwr0 + pwr1 + pwr2 + sidenodes * damagePerSideNode + (isOrder && pts0 >= 14 && pts1 >= 14 ? 0.05 * 10_000 : 0);
-                const key = [-totalPower, -(pts0 + pts1 + pts2)];
-                const candidate: Candidate = {
-                    combos: [c0, c1, c2],
-                    counts: combined,
-                    ptsRaw: [pts0, pts1, pts2],
-                    power: totalPower,
-                    combatPowerIncrease: (pwr0 + pwr1 + pwr2 + sidenodes * damagePerSideNode) / 10_000,
-                    will: [c0.will, c1.will, c2.will],
-                    sidenodes,
-                    key,
-                };
-                if (!best) {
-                    best = candidate;
-                    continue;
-                }
-                let better = false;
-                for (let k = 0; k < key.length; k++) {
-                    if (key[k] < best.key[k]) {
-                        better = true;
-                        break;
-                    }
-                    if (key[k] > best.key[k]) break;
-                }
-                if (better) {
-                    best = candidate;
-                    // format 
-                    console.log(`New best has power ${totalPower} = ${pwr0}+${pwr1}+${pwr2}+${sidenodes}*${damagePerSideNode} (${sidenodes*damagePerSideNode}) pts ${pts0},${pts1},${pts2}`);
-                }
-            }
+    return {
+        best: {
+            combos: best.combos.map(c => {
+                return {
+                    counts: Object.fromEntries(c.counts.map((k, i) => {
+                        return [gemKeys[i], k]
+                    })),
+                    combo: c.counts.map((k, i) => Array.from({ length: k }).fill(gemKeys[i]) as GemKey[]).flat(),
+                    will: c.will,
+                    points: c.points,
+                    
+                } satisfies Combo
+            }),
+            counts: Object.fromEntries(best.counts.map((k, i) => {
+                return [gemKeys[i], k]
+            })),
+            ptsRaw: best.ptsRaw,
+            will: best.will,
+            power: best.power,
+            sidenodes: best.sidenodes,
+            combatPowerIncrease: best.combatPowerIncrease
         }
     }
-    if (best?.ptsRaw.reduce((a, b) => a + b, 0) == 0) return { best: null };
-    return { best };
 }
-
+    
 function buildGemCards(combo: GemKey[]) {
     return combo.map((t, idx) => (
         <div key={`${t}-${idx}`} className={`gem-card gem-${t}`}>
             <div className="gem-type">{t}</div>
             <div className="gem-sub">
-                {ASTROGEMS[t].points}★ {ASTROGEMS[t].will}W
+                {ASTROGEMS[t].will}W {ASTROGEMS[t].points}★ 
             </div>
         </div>
     ));
