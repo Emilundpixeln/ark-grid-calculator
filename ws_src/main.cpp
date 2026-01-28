@@ -41,7 +41,7 @@ static const int SUPP_ORDER[3][6] = {
 static const int SUPP_CHAOS[3][6] = {
     {60, 120, 540, 558, 576, 600},
     {60, 120, 540, 558, 576, 600},
-    {3, 7, 27, 35, 43, 51}};
+    {30, 67, 200, 211, 222, 233}};
 
 
 struct Combo
