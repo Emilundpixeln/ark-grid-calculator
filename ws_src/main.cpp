@@ -23,26 +23,45 @@ static const int CORE_WILL[4] = {12, 15, 17, 0};
 static const int CORE_POINT_CAP[4] = {14, 20, 20, 0};
 
 // combat power tables
-static const int DPS_ORDER[3][6] = {
-    {150, 400, 850, 867, 883, 900},
-    {150, 400, 850, 867, 883, 900},
-    {100, 250, 550, 567, 583, 600}};
+static const std::array<std::array<int, 6>, 3> DPS_ORDER = {
+    std::array<int, 6>{150, 400, 750, 767, 783, 800},
+    std::array<int, 6>{150, 400, 750, 767, 783, 800},
+    std::array<int, 6>{100, 250, 450, 467, 483, 500}};
 
-static const int DPS_CHAOS[3][6] = {
-    {50, 100, 350, 367, 383, 400},
-    {50, 100, 350, 367, 383, 400},
-    {50, 100, 350, 367, 383, 400}};
+static const std::array<std::array<int, 6>, 3> DPS_CHAOS = {
+    std::array<int, 6>{50, 100, 250, 267, 283, 300},
+    std::array<int, 6>{50, 100, 250, 267, 283, 300},
+    std::array<int, 6>{50, 100, 250, 267, 283, 300}};
 
-static const int SUPP_ORDER[3][6] = {
-    {120, 120, 900, 918, 930, 942},
-    {120, 120, 900, 918, 930, 942},
-    {0, 60, 300, 310, 320, 330}};
+static const std::array<std::array<int, 6>, 3> SUPP_ORDER = {
+    std::array<int, 6>{120, 120, 780, 798, 810, 822},
+    std::array<int, 6>{120, 120, 780, 798, 810, 822},
+    std::array<int, 6>{0, 60, 210, 220, 230, 240}};
 
-static const int SUPP_CHAOS[3][6] = {
-    {60, 120, 540, 558, 576, 600},
-    {60, 120, 540, 558, 576, 600},
-    {30, 67, 200, 211, 222, 233}};
+static const std::array<std::array<int, 6>, 3> SUPP_CHAOS = {
+    std::array<int, 6>{60, 120, 360, 378, 396, 420},
+    std::array<int, 6>{60, 120, 360, 378, 396, 420},
+    std::array<int, 6>{30, 67, 200, 211, 222, 233}};
+    
+static const std::array<std::array<int, 6>, 3> DPS_ORDER_ANCIENT = {
+    std::array<int, 6>{150, 400, 850, 867, 883, 900},
+    std::array<int, 6>{150, 400, 850, 867, 883, 900},
+    std::array<int, 6>{100, 250, 550, 567, 583, 600}};
 
+static const std::array<std::array<int, 6>, 3> DPS_CHAOS_ANCIENT = {
+    std::array<int, 6>{50, 100, 350, 367, 383, 400},
+    std::array<int, 6>{50, 100, 350, 367, 383, 400},
+    std::array<int, 6>{50, 100, 350, 367, 383, 400}};
+
+static const std::array<std::array<int, 6>, 3> SUPP_ORDER_ANCIENT = {
+    std::array<int, 6>{120, 120, 900, 918, 930, 942},
+    std::array<int, 6>{120, 120, 900, 918, 930, 942},
+    std::array<int, 6>{0, 60, 300, 310, 320, 330}};
+
+static const std::array<std::array<int, 6>, 3> SUPP_CHAOS_ANCIENT = {
+    std::array<int, 6>{60, 120, 540, 558, 576, 600},
+    std::array<int, 6>{60, 120, 540, 558, 576, 600},
+    std::array<int, 6>{30, 67, 265, 276, 288, 299}};
 
 struct Combo
 {
@@ -76,7 +95,7 @@ struct OptimizationResult
 };
 
 
-static int roundPts(int pts, const int power[6])
+static int roundPts(int pts, const std::array<int, 6>& power)
 {
     if (pts >= 20)
         return power[5];
@@ -180,10 +199,20 @@ OptimizationResult optimizeThreeCores(
     auto c1 = generateCoreCombos(inv, CORE_WILL[cores[1].rarity], cores[1].minPoints);
     auto c2 = generateCoreCombos(inv, CORE_WILL[cores[2].rarity], cores[2].minPoints);
 
-    const int (*table)[6] =
+  const auto &table_relic =
         isSupport
             ? (isOrder ? SUPP_ORDER : SUPP_CHAOS)
             : (isOrder ? DPS_ORDER : DPS_CHAOS);
+    const auto &table_ancient =
+        isSupport
+            ? (isOrder ? SUPP_ORDER_ANCIENT : SUPP_CHAOS_ANCIENT)
+            : (isOrder ? DPS_ORDER_ANCIENT : DPS_CHAOS_ANCIENT);
+
+    std::array<std::array<int, 6>, 3> table;
+    for (int i = 0; i < 3; i++) {
+        table[i] = (cores[i].rarity == 1) ? table_relic[i] : table_ancient[i];
+    }
+
 
     Candidate best;
     double bestKey = -std::numeric_limits<double>::infinity();
